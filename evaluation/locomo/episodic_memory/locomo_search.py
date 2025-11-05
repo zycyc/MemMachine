@@ -114,7 +114,7 @@ async def process_question(
 
     llm_start = time.time()
     rsp = await model.responses.create(
-        model="gpt-4o-mini",
+        model="Qwen/Qwen2.5-7B-Instruct",
         max_output_tokens=4096,
         temperature=0.0,
         top_p=1,
@@ -167,6 +167,7 @@ async def main():
 
     model = AsyncOpenAI(
         api_key=os.getenv("OPENAI_API_KEY"),
+        base_url="http://localhost:8000/v1",
     )
 
     results: dict[str, Any] = {}

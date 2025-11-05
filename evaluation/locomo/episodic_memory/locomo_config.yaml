@@ -11,22 +11,23 @@ sessiondb:
 model:
   my_model_id:
     model_name: "gpt-4o-mini"
-    api_key: <OPENAI_API_KEY>
+    api_key: "token-abc123"
 storage:
   my_storage_id:
     vendor_name: neo4j
     host: localhost
     port: 7687
     user: neo4j
-    password: <NEO4J_PASSWORD>
+    password: "neo4j_password"
     force_exact_similarity_search: true
 
 embedder:
   my_embedder_id:
     name: "openai"
     config:
-      model_name: "text-embedding-3-small"
-      api_key: <OPENAI_API_KEY>
+      model: "Qwen/Qwen3-Embedding-0.6B"
+      api_key: "token-abc123"
+      base_url: "http://localhost:8001/v1"
 
 reranker:
   my_reranker_id:

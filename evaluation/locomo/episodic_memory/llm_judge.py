@@ -3,14 +3,20 @@
 
 import argparse
 import json
+import os
 from collections import defaultdict
 
 import numpy as np
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import OpenAI, APITimeoutError
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 load_dotenv()
-client = OpenAI()
+client = OpenAI(
+    base_url=os.getenv("EVALUATOR_BASE_URL", "http://localhost:8000/v1"),
+    api_key=os.getenv("EVALUATOR_API_KEY", os.getenv("OPENAI_API_KEY")),
+    timeout=120.0,  # Increase timeout to 120 seconds
+)
 
 ACCURACY_PROMPT = """
 Your task is to label an answer to a question as ’CORRECT’ or ’WRONG’. You will be given the following data:
@@ -39,10 +45,19 @@ Just return the label CORRECT or WRONG in a json format with the key as "label".
 """
 
 
+@retry(
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=2, min=2, max=10),
+    retry=retry_if_exception_type((APITimeoutError, ConnectionError)),
+    reraise=True
+)
 def evaluate_llm_judge(question, gold_answer, generated_answer):
-    """Evaluate the generated answer against the gold answer using an LLM judge."""
+    """Evaluate the generated answer against the gold answer using an LLM judge.
+
+    Includes automatic retry logic for timeout and connection errors.
+    """
     response = client.chat.completions.create(
-        model="gpt-4o-mini",
+        model=os.getenv("EVALUATOR_MODEL", "Qwen/Qwen2.5-7B-Instruct"),
         messages=[
             {
                 "role": "user",
@@ -56,7 +71,20 @@ def evaluate_llm_judge(question, gold_answer, generated_answer):
         response_format={"type": "json_object"},
         temperature=0.0,
     )
-    label = json.loads(response.choices[0].message.content)["label"]
+
+    # Clean the response content - remove any trailing special tokens
+    content = response.choices[0].message.content
+    content = content.split('<|')[0].strip()  # Remove <|call|> and similar tokens
+
+    try:
+        parsed = json.loads(content)
+        label = parsed.get("label", parsed.get("analysis", "WRONG"))
+    except json.JSONDecodeError as e:
+        print(f"JSON parsing error: {e}")
+        print(f"Content was: {repr(content)}")
+        # Default to WRONG if we can't parse
+        label = "WRONG"
+
     return 1 if label == "CORRECT" else 0
 
 
