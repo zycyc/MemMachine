@@ -12,6 +12,9 @@ from dotenv import load_dotenv
 from tqdm import tqdm
 from llm_judge import evaluate_llm_judge
 
+import nltk
+from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
+
 
 def load_existing_results(target_path: str) -> Dict[str, List[Dict[str, Any]]]:
     """Load existing results if they exist for resume capability."""
@@ -38,10 +41,15 @@ def evaluate_single_item(item: Dict[str, Any], category: str) -> Dict[str, Any]:
 
     try:
         llm_score = evaluate_llm_judge(question, locomo_answer, response)
+        metrics = calculate_metrics(response, locomo_answer)
+        bleu1 = metrics["bleu1"]
+        f1 = metrics["f1"]
     except Exception as e:
         print(f"\nError evaluating question: {e}")
         print(f"Question: {question[:100]}...")
         llm_score = 0  # Default to WRONG on error
+        bleu1 = 0
+        f1 = 0
 
     return {
         "question": question,
@@ -49,7 +57,105 @@ def evaluate_single_item(item: Dict[str, Any], category: str) -> Dict[str, Any]:
         "response": response,
         "category": category,
         "llm_score": llm_score,
+        "bleu_score": bleu1,
+        "f1_score": f1,
     }
+
+
+def simple_tokenize(text):
+    """Simple tokenization function."""
+    # Convert to string if not already
+    text = str(text)
+    return (
+        text.lower()
+        .replace(".", " ")
+        .replace(",", " ")
+        .replace("!", " ")
+        .replace("?", " ")
+        .split()
+    )
+
+
+def calculate_bleu_scores(prediction: str, reference: str) -> Dict[str, float]:
+    """Calculate BLEU scores with different n-gram settings."""
+    pred_tokens = nltk.word_tokenize(prediction.lower())
+    ref_tokens = [nltk.word_tokenize(reference.lower())]
+
+    weights_list = [
+        (1, 0, 0, 0),
+        (0.5, 0.5, 0, 0),
+        (0.33, 0.33, 0.33, 0),
+        (0.25, 0.25, 0.25, 0.25),
+    ]
+    smooth = SmoothingFunction().method1
+
+    scores = {}
+    for n, weights in enumerate(weights_list, start=1):
+        try:
+            score = sentence_bleu(
+                ref_tokens, pred_tokens, weights=weights, smoothing_function=smooth
+            )
+        except Exception as e:
+            print(f"Error calculating BLEU score: {e}")
+            score = 0.0
+        scores[f"bleu{n}"] = score
+
+    return scores
+
+
+def calculate_metrics(prediction: str, reference: str) -> Dict[str, float]:
+    """Calculate comprehensive evaluation metrics for a prediction."""
+    # Handle empty or None values
+    if not prediction or not reference:
+        return {
+            "exact_match": 0,
+            "f1": 0.0,
+            "rouge1_f": 0.0,
+            "rouge2_f": 0.0,
+            "rougeL_f": 0.0,
+            "bleu1": 0.0,
+            "bleu2": 0.0,
+            "bleu3": 0.0,
+            "bleu4": 0.0,
+            "bert_f1": 0.0,
+            "meteor": 0.0,
+            "sbert_similarity": 0.0,
+        }
+
+    # Convert to strings if they're not already
+    prediction = str(prediction).strip()
+    reference = str(reference).strip()
+
+    # Calculate exact match
+    exact_match = int(prediction.lower() == reference.lower())
+
+    # Calculate token-based F1 score
+    pred_tokens = set(simple_tokenize(prediction))
+    ref_tokens = set(simple_tokenize(reference))
+    common_tokens = pred_tokens & ref_tokens
+
+    if not pred_tokens or not ref_tokens:
+        f1 = 0.0
+    else:
+        precision = len(common_tokens) / len(pred_tokens)
+        recall = len(common_tokens) / len(ref_tokens)
+        f1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
+
+    # Calculate all scores
+    bleu_scores = calculate_bleu_scores(prediction, reference)
+
+    # Combine all metrics
+    metrics = {
+        "exact_match": exact_match,
+        "f1": f1,
+        **bleu_scores,
+    }
+
+    return metrics
 
 
 def main():

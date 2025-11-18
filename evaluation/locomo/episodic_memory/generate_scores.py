@@ -20,18 +20,28 @@ df = pd.DataFrame(all_items)
 # Convert category to numeric type
 df["category"] = pd.to_numeric(df["category"])
 
+# Map numeric categories to category names (1: multi_hop, 2: temporal, 3: open_domain, 4: single_hop)
+category_map = {1: "multi_hop", 2: "temporal", 3: "open_domain", 4: "single_hop"}
+df["category_name"] = df["category"].map(category_map)
+
 # Calculate mean scores by category
-result = df.groupby("category").agg({"llm_score": "mean"}).round(4)
+result = (
+    df.groupby("category_name")
+    .agg({"bleu_score": "mean", "f1_score": "mean", "llm_score": "mean"})
+    .round(4)
+)
 
 # Add count of questions per category
-result["count"] = df.groupby("category").size()
+result["count"] = df.groupby("category_name").size()
 
 # Print the results
 print("Mean Scores Per Category:")
 print(result)
 
 # Calculate overall means
-overall_means = df.agg({"llm_score": "mean"}).round(4)
+overall_means = df.agg(
+    {"bleu_score": "mean", "f1_score": "mean", "llm_score": "mean"}
+).round(4)
 
 print("\nOverall Mean Scores:")
 print(overall_means)
